@@ -37,7 +37,7 @@ const ContentRepurposingAgent = () => {
   };
 
   // Gemini API Configuration
-  const GEMINI_API_KEY = 'AIzaSyDolgizPlRh8aFWEnfXhw8Levp7RzOuw6g';
+  const GEMINI_API_KEY = secrets.API;
   const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
 
   const callGeminiAPI = async (prompt) => {
