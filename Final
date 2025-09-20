@@ -1,0 +1,470 @@
+import React, { useState, useRef } from 'react';
+import { Upload, FileText, Twitter, Mail, Video, Download, Wand2, Copy, Check, Settings, Sparkles, BarChart3, Clock, Target } from 'lucide-react';
+
+const ContentRepurposingAgent = () => {
+  const [inputContent, setInputContent] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('');
+  const [generatedContent, setGeneratedContent] = useState(null);
+  const [activeTab, setActiveTab] = useState('input');
+  const [copiedStates, setCopiedStates] = useState({});
+  const [settings, setSettings] = useState({
+    tone: 'professional',
+    length: 'medium',
+    includeHashtags: true,
+    includeEmojis: false
+  });
+  const fileInputRef = useRef();
+
+  const contentFormats = [
+    { id: 'twitter', name: 'Twitter Thread', icon: Twitter, color: 'bg-blue-500' },
+    { id: 'linkedin', name: 'LinkedIn Post', icon: FileText, color: 'bg-blue-700' },
+    { id: 'email', name: 'Email Newsletter', icon: Mail, color: 'bg-green-500' },
+    { id: 'video', name: 'Video Script', icon: Video, color: 'bg-red-500' },
+    { id: 'instagram', name: 'Instagram Caption', icon: Sparkles, color: 'bg-purple-500' },
+    { id: 'blog', name: 'Blog Excerpt', icon: FileText, color: 'bg-orange-500' }
+  ];
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type === 'text/plain') {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setInputContent(e.target.result);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  // Gemini API Configuration
+  const GEMINI_API_KEY = 'AIzaSyDolgizPlRh8aFWEnfXhw8Levp7RzOuw6g';
+  const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+
+  const callGeminiAPI = async (prompt) => {
+    try {
+      const response = await fetch(GEMINI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.candidates[0].content.parts[0].text;
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      throw new Error('Failed to generate content. Please try again.');
+    }
+  };
+
+  const generateContentForFormat = async (format, originalContent) => {
+    const prompts = {
+      twitter: `Convert this content into an engaging Twitter thread (4-6 tweets). Include relevant hashtags, emojis, and ensure each tweet is under 280 characters. Make it conversational and engaging:
+
+${originalContent}`,
+
+      linkedin: `Transform this content into a professional LinkedIn post. Make it engaging for professionals, include relevant hashtags, and encourage engagement through questions or calls-to-action. Keep it professional but personable:
+
+${originalContent}`,
+
+      email: `Create an email newsletter format from this content. Include a compelling subject line, greeting, main content summary, bullet points for key takeaways, and a professional sign-off with call-to-action:
+
+${originalContent}`,
+
+      video: `Convert this into a 60-second video script. Include timing markers (0-15s, 15-30s, etc.), scene descriptions, key talking points, and visual cues. Make it engaging and suitable for short-form video content:
+
+${originalContent}`,
+
+      instagram: `Transform this into an engaging Instagram caption. Include relevant emojis, hashtags, and call-to-action. Make it visually appealing and encourage engagement:
+
+${originalContent}`,
+
+      blog: `Create a blog post excerpt from this content. Include an introduction, key highlights in bullet points, and a compelling conclusion that encourages readers to continue reading:
+
+${originalContent}`
+    };
+
+    return await callGeminiAPI(prompts[format]);
+  };
+
+  const generateContent = async () => {
+    if (!inputContent.trim()) return;
+    
+    setIsProcessing(true);
+    setProcessingStatus('Initializing AI processing...');
+    setActiveTab('output');
+    
+    try {
+      const generatedFormats = {};
+      
+      // Generate content for each format using Gemini API
+      for (let i = 0; i < contentFormats.length; i++) {
+        const format = contentFormats[i];
+        setProcessingStatus(`Generating ${format.name}... (${i + 1}/${contentFormats.length})`);
+        
+        try {
+          const content = await generateContentForFormat(format.id, inputContent);
+          generatedFormats[format.id] = {
+            title: format.name,
+            content: content.trim()
+          };
+        } catch (error) {
+          console.error(`Error generating ${format.name}:`, error);
+          // Fallback content if API fails for this specific format
+          generatedFormats[format.id] = {
+            title: format.name,
+            content: `⚠️ Unable to generate ${format.name} at this time.\n\nThis could be due to:\n• API rate limits\n• Network connectivity issues\n• Content filtering\n\nPlease try again in a few moments.`
+          };
+        }
+        
+        // Add a small delay between requests to avoid rate limiting
+        if (i < contentFormats.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      setGeneratedContent(generatedFormats);
+      setProcessingStatus('Content generation complete!');
+      
+    } catch (error) {
+      console.error('Content generation failed:', error);
+      setGeneratedContent({
+        error: {
+          title: 'Generation Failed',
+          content: `❌ Failed to generate content.\n\nPossible causes:\n• Network connectivity issues\n• API service temporarily unavailable\n• Invalid input content\n\nPlease check your connection and try again.`
+        }
+      });
+    }
+    
+    setIsProcessing(false);
+    setTimeout(() => setProcessingStatus(''), 2000);
+  };
+
+  const copyToClipboard = async (text, id) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedStates({...copiedStates, [id]: true});
+      setTimeout(() => {
+        setCopiedStates({...copiedStates, [id]: false});
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  const exportContent = () => {
+    if (!generatedContent) return;
+    
+    const exportData = Object.entries(generatedContent).map(([format, data]) => 
+      `=== ${data.title} ===\n\n${data.content}\n\n`
+    ).join('\n');
+    
+    const blob = new Blob([exportData], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'repurposed-content.txt';
+    a.click();
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-purple-100 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg">
+                <Wand2 className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                  Content Repurposing Agent
+                </h1>
+                <p className="text-sm text-gray-600">Transform one piece of content into multiple formats</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <BarChart3 className="h-4 w-4" />
+                <span>AI-Powered</span>
+              </div>
+              <button className="p-2 hover:bg-purple-100 rounded-lg transition-colors">
+                <Settings className="h-5 w-5 text-gray-600" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Navigation Tabs */}
+        <div className="flex space-x-1 bg-white/60 backdrop-blur-sm p-1 rounded-lg mb-8 border border-purple-100">
+          <button
+            onClick={() => setActiveTab('input')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-md transition-all ${
+              activeTab === 'input'
+                ? 'bg-white shadow-sm text-purple-700 border border-purple-200'
+                : 'text-gray-600 hover:text-purple-600'
+            }`}
+          >
+            <Upload className="h-4 w-4" />
+            <span className="font-medium">Input Content</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('output')}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-md transition-all ${
+              activeTab === 'output'
+                ? 'bg-white shadow-sm text-purple-700 border border-purple-200'
+                : 'text-gray-600 hover:text-purple-600'
+            }`}
+            disabled={!generatedContent && !isProcessing}
+          >
+            <Sparkles className="h-4 w-4" />
+            <span className="font-medium">Generated Content</span>
+          </button>
+        </div>
+
+        {/* Input Tab */}
+        {activeTab === 'input' && (
+          <div className="space-y-6">
+            {/* Features Overview */}
+            <div className="grid md:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-6 border border-purple-100">
+                <div className="flex items-center space-x-3 mb-3">
+                  <Clock className="h-6 w-6 text-purple-600" />
+                  <h3 className="font-semibold text-gray-800">Save Time</h3>
+                </div>
+                <p className="text-gray-600 text-sm">Transform hours of manual work into minutes with AI-powered repurposing</p>
+              </div>
+              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-6 border border-purple-100">
+                <div className="flex items-center space-x-3 mb-3">
+                  <Target className="h-6 w-6 text-indigo-600" />
+                  <h3 className="font-semibold text-gray-800">Multi-Platform</h3>
+                </div>
+                <p className="text-gray-600 text-sm">Generate content optimized for different platforms and audiences</p>
+              </div>
+              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-6 border border-purple-100">
+                <div className="flex items-center space-x-3 mb-3">
+                  <BarChart3 className="h-6 w-6 text-pink-600" />
+                  <h3 className="font-semibold text-gray-800">Consistent Quality</h3>
+                </div>
+                <p className="text-gray-600 text-sm">Maintain brand voice and quality across all content formats</p>
+              </div>
+            </div>
+
+            {/* Content Input */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-purple-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">Input Your Content</h2>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>Upload File</span>
+                </button>
+              </div>
+              
+              <textarea
+                value={inputContent}
+                onChange={(e) => setInputContent(e.target.value)}
+                placeholder="Paste your long-form content here (blog post, whitepaper, article, etc.)"
+                className="w-full h-64 p-4 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-gray-700"
+              />
+              
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".txt"
+                className="hidden"
+              />
+              
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-gray-500">
+                  {inputContent.length} characters • Supports text files, blog posts, articles
+                </div>
+                <button
+                  onClick={generateContent}
+                  disabled={!inputContent.trim() || isProcessing}
+                  className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="h-4 w-4" />
+                      <span>Generate Content</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Output Format Preview */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-purple-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Available Output Formats</h3>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {contentFormats.map((format) => (
+                  <div key={format.id} className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+                    <div className={`p-2 ${format.color} rounded-lg`}>
+                      <format.icon className="h-5 w-5 text-white" />
+                    </div>
+                    <span className="font-medium text-gray-700">{format.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Output Tab */}
+        {activeTab === 'output' && (
+          <div className="space-y-6">
+            {isProcessing ? (
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-purple-100 p-12 text-center">
+                <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 border-t-purple-600 mx-auto mb-6"></div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">AI is Working Its Magic ✨</h3>
+                <p className="text-gray-600 mb-4">{processingStatus || 'Processing your content...'}</p>
+                <div className="mt-6 space-y-2">
+                  <div className="text-sm text-gray-500">• Analyzing content structure and key points</div>
+                  <div className="text-sm text-gray-500">• Adapting tone and style for each platform</div>
+                  <div className="text-sm text-gray-500">• Optimizing for engagement and reach</div>
+                  <div className="text-sm text-gray-500">• Adding platform-specific elements</div>
+                </div>
+                <div className="mt-6 bg-purple-50 rounded-lg p-4">
+                  <p className="text-sm text-purple-700">
+                    ⚡ Powered by Google Gemini AI - Real-time content generation in progress
+                  </p>
+                </div>
+              </div>
+            ) : generatedContent ? (
+              <>
+                {/* Export Header */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-purple-100 p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-800">Generated Content</h2>
+                      <p className="text-gray-600">Your content has been repurposed into {Object.keys(generatedContent).length} formats</p>
+                    </div>
+                    <button
+                      onClick={exportContent}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      <span>Export All</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Generated Content Grid */}
+                <div className="grid gap-6">
+                  {Object.entries(generatedContent).map(([formatId, content]) => {
+                    const format = contentFormats.find(f => f.id === formatId);
+                    const isCopied = copiedStates[formatId];
+                    
+                    return (
+                      <div key={formatId} className="bg-white/80 backdrop-blur-sm rounded-xl border border-purple-100 overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-purple-100">
+                          <div className="flex items-center space-x-3">
+                            <div className={`p-2 ${format.color} rounded-lg`}>
+                              <format.icon className="h-5 w-5 text-white" />
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-gray-800">{content.title}</h3>
+                              <p className="text-sm text-gray-600">{format.name}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(content.content, formatId)}
+                            className="flex items-center space-x-2 px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+                          >
+                            {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            <span>{isCopied ? 'Copied!' : 'Copy'}</span>
+                          </button>
+                        </div>
+                        <div className="p-6">
+                          <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                            {content.content}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-purple-100 p-12 text-center">
+                <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Wand2 className="h-8 w-8 text-purple-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-800 mb-2">Ready to Generate Content</h3>
+                <p className="text-gray-600 mb-6">Go back to the Input tab and add your content to get started</p>
+                <button
+                  onClick={() => setActiveTab('input')}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  Add Content
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-white/60 backdrop-blur-sm border-t border-purple-100 mt-16">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="grid md:grid-cols-3 gap-8">
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <Wand2 className="h-5 w-5 text-purple-600" />
+                <span className="font-semibold text-gray-800">Content Repurposing Agent</span>
+              </div>
+              <p className="text-gray-600 text-sm">AI-powered content transformation for maximum reach and engagement across all platforms.</p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-3">Supported Formats</h4>
+              <ul className="space-y-1 text-sm text-gray-600">
+                <li>• Social Media Posts</li>
+                <li>• Email Newsletters</li>
+                <li>• Video Scripts</li>
+                <li>• Blog Excerpts</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-3">Features</h4>
+              <ul className="space-y-1 text-sm text-gray-600">
+                <li>• AI-Powered Analysis</li>
+                <li>• Multi-Platform Optimization</li>
+                <li>• Instant Generation</li>
+                <li>• Export Capabilities</li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-purple-100 mt-8 pt-6 text-center text-sm text-gray-500">
+            © 2024 Content Repurposing Agent. Powered by advanced AI technology.
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default ContentRepurposingAgent;
